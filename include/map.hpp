@@ -1,6 +1,6 @@
 #pragma once
 
-// #include "xxhash.h"
+#include "xxhash.h"
 
 #include <array>
 #include <cstddef>
@@ -61,6 +61,7 @@ protected:
   struct Bucket final
   {
     BucketState state;
+
     BucketBase  base;
     PSL         psl;
     K           key;

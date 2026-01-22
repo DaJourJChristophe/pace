@@ -1,0 +1,9 @@
+[submodule "lib/xxHash"]
+	path = lib/xxHash
+	url = git@github.com:Cyan4973/xxHash.git
+[submodule "lib/googletest"]
+	path = lib/googletest
+	url = git@github.com:google/googletest.git
+[submodule "lib/benchmark"]
+	path = lib/benchmark
+	url = git@github.com:google/benchmark.git

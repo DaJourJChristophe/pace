@@ -1,0 +1,10 @@
+*.a
+*.dll
+*.o
+*.slnx
+*.so
+
+.vs/
+
+bin/*
+!bin/.keep

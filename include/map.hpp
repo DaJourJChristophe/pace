@@ -6,28 +6,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
-
-namespace
-{
-  std::uint64_t XXH3_64bits_withSeed(const void* data, const std::size_t len, const std::uint64_t seed)
-  {
-    (void)seed;
-    const std::uint8_t *ptr = static_cast<const std::uint8_t*>(data);
-
-    std::uint64_t result = 0UL;
-
-    for (std::uint64_t i = 0UL; i < len; i++)
-    {
-      result += ptr[i];
-    }
-
-    return (result % len);
-  }
-} // namespace
 
 template <typename K, typename V, std::size_t N>
 class Map
@@ -156,11 +139,11 @@ Map<K, V, N>::Bucket::Bucket(const BucketState state_,
                              const PSL         psl_,
                              const K&          key_,
                              const V&          val_) noexcept
-: state(state_),
-  base(base_),
-  psl(psl_),
-  key(key_),
-  val(val_) {}
+  : state(state_),
+    base(base_),
+    psl(psl_),
+    key(key_),
+    val(val_) {}
 
 template <typename K, typename V, std::size_t N>
 int Map<K, V, N>::get(V& val, const K& key) noexcept
@@ -189,31 +172,61 @@ int Map<K, V, N>::get(V& val, const K& key) noexcept
 template <typename K, typename V, std::size_t N>
 int Map<K, V, N>::set(const K& key, const V& val) noexcept
 {
-  const std::uint64_t base = m_index_for_key(key);
-  Bucket temporary_slot(BucketState::OCCUPIED, base, 0UL, key, val);
+  bool has_empty = false;
 
-  for (std::uint64_t displacement = 0UL; displacement < N; displacement++)
+  for (std::uint64_t i = 0UL; i < N; i++)
   {
-    Bucket& current_slot = m_slots[(displacement + temporary_slot.base) % N];
+    Bucket& slot = m_slots[i];
 
-    if (current_slot.state == BucketState::EMPTY)
+    if (slot.state == BucketState::EMPTY)
     {
-      std::swap(current_slot, temporary_slot);
-      temporary_slot.psl = displacement;
+      has_empty = true;
+      continue;
+    }
+
+    if (slot.state == BucketState::OCCUPIED && slot.key == key)
+    {
+      slot.val = val;
+      return 0;
+    }
+  }
+
+  if (!has_empty)
+  {
+    return (-1);
+  }
+
+  const std::uint64_t base = m_index_for_key(key);
+
+  K           k = key;
+  V           v = val;
+  BucketBase  b = base;
+  PSL         p = 0UL;
+
+  for (std::uint64_t i = 0UL; i < N; i++)
+  {
+    Bucket& slot = m_slots[(static_cast<std::uint64_t>(b) + static_cast<std::uint64_t>(p)) % N];
+
+    if (slot.state == BucketState::EMPTY)
+    {
+      slot.state = BucketState::OCCUPIED;
+      slot.base  = b;
+      slot.psl   = p;
+      slot.key   = std::move(k);
+      slot.val   = std::move(v);
       return 0;
     }
 
-    if (key == current_slot.key)
+    if (slot.psl < p)
     {
-      current_slot.val = val;
-      return 0;
+      std::swap(slot.key,  k);
+      std::swap(slot.val,  v);
+      std::swap(slot.base, b);
+      std::swap(slot.psl,  p);
+      slot.state = BucketState::OCCUPIED;
     }
 
-    if (displacement < current_slot.psl)
-    {
-      std::swap(current_slot, temporary_slot);
-      temporary_slot.psl = displacement;
-    }
+    ++p;
   }
 
   return (-1);
@@ -226,7 +239,8 @@ int Map<K, V, N>::del(const K& key) noexcept
 
   for (std::uint64_t displacement = 0UL; displacement < N; displacement++)
   {
-    Bucket& slot = m_slots[(displacement + base) % N];
+    const std::uint64_t i = (displacement + base) % N;
+    Bucket& slot = m_slots[i];
 
     if (slot.state == BucketState::EMPTY)
     {
@@ -235,16 +249,25 @@ int Map<K, V, N>::del(const K& key) noexcept
 
     if (slot.state == BucketState::OCCUPIED && key == slot.key)
     {
-      slot.state = BucketState::EMPTY;
-      slot.key   = K{};
-      slot.val   = V{};
+      std::uint64_t hole = i;
+      std::uint64_t j    = (hole + 1UL) % N;
 
-      for (std::uint64_t j = (1UL + displacement); j < N; j++)
+      for (;;)
       {
-        std::swap(m_slots[j - 1UL], m_slots[j]);
-      }
+        Bucket& next = m_slots[j];
 
-      return 0;
+        if (next.state == BucketState::EMPTY || next.psl == 0UL)
+        {
+          m_slots[hole] = Bucket{};
+          return 0;
+        }
+
+        m_slots[hole] = std::move(next);
+        m_slots[hole].psl = m_slots[hole].psl - 1UL;
+
+        hole = j;
+        j    = (j + 1UL) % N;
+      }
     }
   }
 

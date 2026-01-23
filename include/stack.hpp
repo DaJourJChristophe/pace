@@ -6,6 +6,7 @@
 template <typename T, std::size_t N>
 class Stack
 {
+protected:
   std::size_t      m_size;
   std::array<T, N> m_data;
 
@@ -16,18 +17,18 @@ public:
 
   explicit Stack() noexcept;
 
-  int push(const T& element) noexcept;
+  [[nodiscard]] int push(const T& element) noexcept;
 
   template <typename... Args>
-  int emplace(Args&&... args) noexcept;
+  [[nodiscard]] int emplace(Args&&... args) noexcept;
 
-  int peek(T& element) const noexcept;
+  [[nodiscard]] int peek(T& element) const noexcept;
 
-  int pop(T& element) noexcept;
+  [[nodiscard]] int pop(T& element) noexcept;
 
-  bool empty(void) const noexcept;
+  [[nodiscard]] bool empty(void) const noexcept;
 
-  std::size_t size(void) const noexcept;
+  [[nodiscard]] std::size_t size(void) const noexcept;
 };
 
 template <typename T, std::size_t N>

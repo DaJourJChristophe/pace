@@ -223,7 +223,6 @@ public:
 
       if (depth >= prefix.size())
       {
-        // Prefix path exists; confirm there is at least one key under it.
         if (node->is_end)
         {
           return true;
@@ -244,5 +243,78 @@ public:
       node = node->children[idx(uc)].get();
       ++depth;
     }
+  }
+
+  [[nodiscard]] bool matches_prefix(std::string_view s) const noexcept
+  {
+    const Node* node = m_root.get();
+    std::size_t depth = 0UL;
+
+    for (;;)
+    {
+      if (node == nullptr)
+      {
+        return false;
+      }
+
+      if (node->is_end)
+      {
+        return true;
+      }
+
+      if (node->is_bucket())
+      {
+        for (std::uint64_t i = 0UL; i < BucketCapacity; i++)
+        {
+          const auto& b = node->bucket->m_slots[i];
+
+          if (static_cast<std::uint8_t>(b.state) != 1U)
+          {
+            continue;
+          }
+
+          const std::string& k = b.key;
+
+          if (k.size() == 0UL)
+          {
+            continue;
+          }
+
+          if (k.size() > s.size())
+          {
+            continue;
+          }
+
+          if (std::memcmp(s.data(), k.data(), k.size()) == 0)
+          {
+            return true;
+          }
+        }
+
+        return false;
+      }
+
+      if (depth >= s.size())
+      {
+        return false;
+      }
+
+      const unsigned char uc = static_cast<unsigned char>(s[depth]);
+      node = node->children[idx(uc)].get();
+      ++depth;
+    }
+  }
+
+  [[nodiscard]] bool matches_substring(std::string_view s) const noexcept
+  {
+    for (std::size_t i = 0UL; i < s.size(); i++)
+    {
+      if (matches_prefix(s.substr(i)))
+      {
+        return true;
+      }
+    }
+
+    return false;
   }
 };

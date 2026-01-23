@@ -44,6 +44,22 @@ public:
      return kOk;
    }
 
+   template <typename... Args>
+   [[nodiscard]] int emplace(Args&&... args) noexcept
+   {
+      if (m_size >= N)
+      {
+        return kFull;
+      }
+
+      m_data[m_tail & kMask] = T{std::forward<Args>(args)...};
+
+      ++m_tail;
+      ++m_size;
+
+      return kOk;
+    }
+
    [[nodiscard]] int peek(T& out) const noexcept
    {
      if (m_size == 0UL)

@@ -19,6 +19,8 @@
 
 #pragma once
 
+#include "trie.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -44,6 +46,62 @@
 
 namespace stacktrace
 {
+    struct FilterDB final
+  {
+    // Prefix matches: "s begins with any of these"
+    HATTrie<64UL> stl_prefix;
+    HATTrie<64UL> conv_prefix;
+
+    // Substring matches: "s contains any of these anywhere"
+    HATTrie<64UL> stl_substr;
+    HATTrie<64UL> file_substr;
+    HATTrie<64UL> module_substr;
+
+    FilterDB() noexcept : stl_prefix(),
+                          conv_prefix(),
+                          stl_substr(),
+                          file_substr(),
+                          module_substr()
+    {
+      // STL/function prefixes
+      stl_prefix.insert("std::");
+      stl_prefix.insert("std::__");
+      stl_prefix.insert("__gnu_cxx::");
+      stl_prefix.insert("__cxxabiv1::");
+
+      // Common STL plumbing substrings
+      stl_substr.insert("std::__invoke");
+      stl_substr.insert("__invoke_impl");
+      stl_substr.insert("__invoke_r");
+      stl_substr.insert("std::call_once");
+      stl_substr.insert("std::once_flag");
+      stl_substr.insert("std::__future_base");
+      stl_substr.insert("std::function<");
+
+      // File path substrings (libstdc++ headers / GCC paths)
+      file_substr.insert("/usr/include/c++");
+      file_substr.insert("\\usr\\include\\c++");
+      file_substr.insert("/include/c++");
+      file_substr.insert("\\include\\c++");
+      file_substr.insert("/usr/lib/gcc/");
+      file_substr.insert("\\usr\\lib\\gcc\\");
+
+      // Module substrings (best-effort)
+      module_substr.insert("libstdc++");
+      module_substr.insert("libgcc");
+      module_substr.insert("libc++");
+
+      // C++ convention prefixes
+      conv_prefix.insert("operator");
+    }
+  };
+
+  static inline const FilterDB& filters() noexcept
+  {
+    static const FilterDB db{};
+    return db;
+  }
+
   struct Frame
   {
     std::uintptr_t pc{};
@@ -158,62 +216,40 @@ namespace stacktrace
     return string_ends_with(f.module, base);
   }
 
-  static inline bool contains_substr(const std::string& s, const char* sub) noexcept
-  {
-    return (!s.empty() && sub && std::strstr(s.c_str(), sub) != nullptr);
-  }
-
-  static inline bool starts_with(const std::string& s, const char* pre) noexcept
-  {
-    if (!pre) return false;
-    const std::size_t n = std::strlen(pre);
-    return s.size() >= n && std::memcmp(s.data(), pre, n) == 0;
-  }
-
-  // Heuristic STL filter:
-  // - Function begins with std:: / __gnu_cxx:: / std::__ / __cxxabiv1::
-  // - OR debug location is in libstdc++ headers (/usr/include/c++ or .../include/c++)
-  // - OR module path looks like libstdc++ / libgcc / libc++ (rare on Cygwin, but harmless)
   static inline bool is_stl_frame(const Frame& f) noexcept
   {
-    // Function-based filtering (works even when file/line is missing).
-    if (starts_with(f.function, "std::") ||
-        starts_with(f.function, "std::__") ||
-        starts_with(f.function, "__gnu_cxx::") ||
-        starts_with(f.function, "__cxxabiv1::"))
-    {
-      return true;
-    }
+    const FilterDB& db = filters();
 
-    // These are very common “STL plumbing” names (optional but useful).
-    if (contains_substr(f.function, "std::__invoke") ||
-        contains_substr(f.function, "__invoke_impl") ||
-        contains_substr(f.function, "__invoke_r") ||
-        contains_substr(f.function, "std::call_once") ||
-        contains_substr(f.function, "std::once_flag") ||
-        contains_substr(f.function, "std::__future_base") ||
-        contains_substr(f.function, "std::function<"))
+    // Function-based filtering (works even when file/line is missing).
+    if (!f.function.empty())
     {
-      return true;
+      if (db.stl_prefix.matches_prefix(f.function))
+      {
+        return true;
+      }
+
+      if (db.stl_substr.matches_substring(f.function))
+      {
+        return true;
+      }
     }
 
     // File path based filtering (libstdc++ headers).
-    if (contains_substr(f.file, "/usr/include/c++") ||
-        contains_substr(f.file, "\\usr\\include\\c++") ||
-        contains_substr(f.file, "/include/c++") ||
-        contains_substr(f.file, "\\include\\c++") ||
-        contains_substr(f.file, "/usr/lib/gcc/") ||
-        contains_substr(f.file, "\\usr\\lib\\gcc\\"))
+    if (!f.file.empty())
     {
-      return true;
+      if (db.file_substr.matches_substring(f.file))
+      {
+        return true;
+      }
     }
 
     // Module path based filtering (best-effort; often empty or your exe).
-    if (contains_substr(f.module, "libstdc++") ||
-        contains_substr(f.module, "libgcc") ||
-        contains_substr(f.module, "libc++"))
+    if (!f.module.empty())
     {
-      return true;
+      if (db.module_substr.matches_substring(f.module))
+      {
+        return true;
+      }
     }
 
     return false;
@@ -221,7 +257,14 @@ namespace stacktrace
 
   static inline bool is_cpp_convention(const Frame& f) noexcept
   {
-    if (starts_with(f.function, "operator"))
+    if (f.function.empty())
+    {
+      return false;
+    }
+
+    const FilterDB& db = filters();
+
+    if (db.conv_prefix.matches_prefix(f.function))
     {
       return true;
     }

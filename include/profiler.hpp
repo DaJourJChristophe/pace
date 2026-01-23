@@ -1,6 +1,7 @@
 #pragma once
 
 #include "event.hpp"
+#include "queue.hpp"
 #include "snapshot.hpp"
 #include "stack.hpp"
 #include "trace.hpp"
@@ -14,7 +15,6 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
-#include <queue>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -27,6 +27,8 @@ class Profiler final
     float    timestamp;
     Snapshot snapshot;
 
+    explicit Frame() noexcept = default;
+
     explicit Frame(const float timestamp_, Snapshot snapshot_) noexcept;
   };
 
@@ -36,7 +38,7 @@ class Profiler final
   std::chrono::time_point<std::chrono::steady_clock> m_start;
   std::chrono::time_point<std::chrono::steady_clock> m_stop;
   Snapshot                                           m_previous_snapshot;
-  std::queue<Event>                                  m_queue;
+  Queue<Event, 64UL>                                 m_queue;
 
   void m_profile(const float timestamp, Snapshot snapshot) noexcept;
 

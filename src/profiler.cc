@@ -1,3 +1,4 @@
+#include "common.hpp"
 #include "event.hpp"
 #include "profiler.hpp"
 #include "snapshot.hpp"
@@ -13,7 +14,6 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
-#include <queue>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -28,7 +28,7 @@ void Profiler::scan(std::future<void>& done, HANDLE th, const std::size_t skip, 
 {
   using namespace std::chrono_literals;
 
-  std::queue<Frame> frames_queue;
+  Queue<Frame, 64UL> frames_queue;
 
   m_start = std::chrono::steady_clock::now();
 
@@ -41,10 +41,27 @@ void Profiler::scan(std::future<void>& done, HANDLE th, const std::size_t skip, 
 
     if (done.wait_for(0s) == std::future_status::ready)
     {
-      while (frames_queue.empty() == false)
+      bool empty;
+
+      for (;;)
       {
-        const Frame frame = std::move(frames_queue.front());
-        frames_queue.pop();
+        if (frames_queue.empty(empty))
+        {
+          common::fatal_trap();
+        }
+
+        if (empty)
+        {
+          break;
+        }
+
+        Frame frame;
+
+        if (frames_queue.pop(frame))
+        {
+          common::fatal_trap();
+        }
+
         m_profile(frame.timestamp, frame.snapshot);
       }
 
@@ -53,7 +70,6 @@ void Profiler::scan(std::future<void>& done, HANDLE th, const std::size_t skip, 
 
     for (const auto& frame : frames)
     {
-      // if (frame.function == "operator()") continue;
       snapshot.push_back(stacktrace::stable_function_name_only(frame));
 
       /*
@@ -74,14 +90,41 @@ void Profiler::scan(std::future<void>& done, HANDLE th, const std::size_t skip, 
 
     std::reverse(snapshot.begin(), snapshot.end());
 
-    frames_queue.emplace(elapsed_seconds.count(), std::move(snapshot));
-
-    if (frames_queue.size() >= 32)
+    if (frames_queue.emplace(elapsed_seconds.count(), std::move(snapshot)))
     {
-      while (frames_queue.empty() == false)
+      common::fatal_trap();
+    }
+
+    std::size_t size;
+
+    if (frames_queue.size(size))
+    {
+      common::fatal_trap();
+    }
+
+    if (size >= 32UL)
+    {
+      bool empty;
+
+      for (;;)
       {
-        const Frame frame = std::move(frames_queue.front());
-        frames_queue.pop();
+        if (frames_queue.empty(empty))
+        {
+          common::fatal_trap();
+        }
+
+        if (empty)
+        {
+          break;
+        }
+
+        Frame frame;
+
+        if (frames_queue.pop(frame))
+        {
+          common::fatal_trap();
+        }
+
         m_profile(frame.timestamp, frame.snapshot);
       }
     }
@@ -103,7 +146,10 @@ void Profiler::m_profile(const float timestamp, Snapshot snapshot) noexcept
     {
       for (auto it = m_previous_snapshot.rbegin(); it != m_previous_snapshot.rend(); it++)
       {
-        m_queue.emplace(EventType::END, timestamp, *it);
+        if (m_queue.emplace(EventType::END, timestamp, *it))
+        {
+          common::fatal_trap();
+        }
       }
 
       m_previous_snapshot.clear();
@@ -118,7 +164,10 @@ void Profiler::m_profile(const float timestamp, Snapshot snapshot) noexcept
   {
     for (const auto& start : snapshot)
     {
-      m_queue.emplace(EventType::START, timestamp, start);
+      if (m_queue.emplace(EventType::START, timestamp, start))
+      {
+        common::fatal_trap();
+      }
     }
 
     m_previous_snapshot = std::move(snapshot);
@@ -129,12 +178,18 @@ void Profiler::m_profile(const float timestamp, Snapshot snapshot) noexcept
 
   for (const auto& start : starts)
   {
-    m_queue.emplace(EventType::START, timestamp, start);
+    if (m_queue.emplace(EventType::START, timestamp, start))
+    {
+      common::fatal_trap();
+    }
   }
 
   for (const auto& stop : stops)
   {
-    m_queue.emplace(EventType::END,   timestamp, stop);
+    if (m_queue.emplace(EventType::END,   timestamp, stop))
+    {
+      common::fatal_trap();
+    }
   }
 
   m_previous_snapshot = std::move(snapshot);
@@ -154,11 +209,17 @@ void Profiler::dump(void) noexcept
 
   Stack<Event, 128> stack;
 
-  while (m_queue.empty() == false)
+  // while (m_queue.empty() == false)
+
+  for (;;)
   {
     Event old_event;
-    Event new_event = std::move(m_queue.front());
-    m_queue.pop();
+    Event new_event;
+
+    if (m_queue.pop(new_event))
+    {
+      common::fatal_trap();
+    }
 
     switch (new_event.type)
     {

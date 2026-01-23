@@ -234,7 +234,7 @@ Profiler::StartsNStopsTuple Profiler::m_find_mismatches2(const Snapshot& snapsho
   for (const auto& f : m_previous_snapshot) append_frame(prev_key, f);
 
   // Insert the full previous key; trie will answer prefix-existence queries.
-  Trie trie;
+  HATTrie<> trie;
   trie.insert(prev_key);
 
   // Find LCP length in *frames* (not bytes).

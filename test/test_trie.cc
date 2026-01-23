@@ -3,29 +3,40 @@
 #include <cassert>
 #include <cstdlib>
 #include <memory>
+#include <string>
+#include <vector>
 
 namespace
 {
-  class MockTrie : public Trie
+  template <std::size_t BucketCapacity = 64UL>
+  class MockTrie : public HATTrie<BucketCapacity>
   {
   public:
-    MockTrie() noexcept : Trie() {}
+    MockTrie() noexcept : HATTrie<BucketCapacity>() {}
 
     std::size_t get_max_children(void) const noexcept
     {
-      return kAlphabet;
+      return this->kAlphabet;
     }
 
-    Node* get_root(void) const noexcept
+    typename HATTrie<BucketCapacity>::Node* get_root(void) const noexcept
     {
-      return m_root.get();
+      return this->m_root.get();
     }
   };
+
+  static inline void insert_words(MockTrie<>& trie) noexcept
+  {
+    trie.insert("foo");
+    trie.insert("far");
+    trie.insert("bar");
+    trie.insert("car");
+  }
 } // namespace
 
 void test_trie_root(void)
 {
-  MockTrie trie;
+  MockTrie<> trie;
   const auto root = trie.get_root();
 
   assert(root         != nullptr);
@@ -39,76 +50,56 @@ void test_trie_root(void)
   }
 }
 
-void test_trie_insert(void)
+void test_trie_insert_and_contains(void)
 {
-  MockTrie trie;
-  
-  trie.insert("foo");
-  trie.insert("far");
-  trie.insert("bar");
-  trie.insert("car");
+  MockTrie<> trie;
 
-  const auto root = trie.get_root();
+  insert_words(trie);
 
-  assert(root         != nullptr);
-  assert(root->is_end == false  );
+  assert(trie.contains("foo") == true);
+  assert(trie.contains("far") == true);
+  assert(trie.contains("bar") == true);
+  assert(trie.contains("car") == true);
 
-  // Test the first level of the tree.
+  assert(trie.contains("fo")  == false);
+  assert(trie.contains("ca")  == false);
+  assert(trie.contains("f")   == false);
+  assert(trie.contains("c")   == false);
 
-  assert(root->children[ 98] != nullptr);
-  assert(root->children[ 99] != nullptr);
-  assert(root->children[102] != nullptr);
+  assert(trie.contains("tar") == false);
+  assert(trie.contains("and") == false);
+  assert(trie.contains("man") == false);
+  assert(trie.contains("van") == false);
+}
 
+void test_trie_has_prefix(void)
+{
+  MockTrie<> trie;
 
-  // Test the second level of the tree.
+  insert_words(trie);
 
-  auto child = root->children[98].get();
+  assert(trie.has_prefix("fo")  == true);
+  assert(trie.has_prefix("b")   == true);
+  assert(trie.has_prefix("car") == true);
+  assert(trie.has_prefix("fa")  == true);
 
-  assert(child != nullptr && child->children[ 97] != nullptr);
+  assert(trie.has_prefix("f")   == true);
+  assert(trie.has_prefix("c")   == true);
 
-  child = root->children[ 99].get();
-
-  assert(child != nullptr && child->children[ 97] != nullptr);
-
-  child = root->children[102].get();
-
-  assert(child != nullptr && child->children[ 97] != nullptr);
-  assert(child != nullptr && child->children[111] != nullptr);
-
-
-  // Test the third level of the tree.
-
-  child =  root->children[ 98].get();
-  child = child->children[ 97].get();
-
-  assert(child != nullptr && child->children[114] != nullptr);
-
-
-  child =  root->children[ 99].get();
-  child = child->children[ 97].get();
-
-  assert(child != nullptr && child->children[114] != nullptr);
-
-
-  child =  root->children[102].get();
-  child = child->children[ 97].get();
-
-  assert(child != nullptr && child->children[114] != nullptr);
-
-  child =  root->children[102].get();
-  child = child->children[111].get();
-
-  assert(child != nullptr && child->children[111] != nullptr);
+  assert(trie.has_prefix("ko")  == false);
+  assert(trie.has_prefix("fl")  == false);
+  assert(trie.has_prefix("baz") == false);
+  assert(trie.has_prefix("ch")  == false);
 }
 
 void test_trie_clear(void)
 {
-  MockTrie trie;
+  MockTrie<> trie;
 
-  trie.insert("foo");
-  trie.insert("far");
-  trie.insert("bar");
-  trie.insert("car");
+  insert_words(trie);
+
+  assert(trie.contains("foo") == true);
+  assert(trie.has_prefix("f") == true);
 
   trie.clear();
 
@@ -123,55 +114,51 @@ void test_trie_clear(void)
   {
     assert(root->children[i] == nullptr);
   }
+
+  assert(trie.contains("foo") == false);
+  assert(trie.contains("far") == false);
+  assert(trie.contains("bar") == false);
+  assert(trie.contains("car") == false);
+
+  assert(trie.has_prefix("f")  == false);
+  assert(trie.has_prefix("b")  == false);
+  assert(trie.has_prefix("c")  == false);
+  assert(trie.has_prefix("")   == false);
 }
 
-void test_trie_contains(void)
+void test_trie_bucket_stress_promote(void)
 {
-  MockTrie trie;
+  // Force bucket overflow so promotion/splitting happens.
+  // Use a small bucket to make the test fast/deterministic.
+  MockTrie<8UL> trie;
 
-  trie.insert("foo");
-  trie.insert("far");
-  trie.insert("bar");
-  trie.insert("car");
+  // All share "a" prefix so they should collide into the same hot node early.
+  for (std::uint64_t i = 0UL; i < 64UL; i++)
+  {
+    std::string s = "a";
+    s += std::to_string(static_cast<unsigned long long>(i));
+    trie.insert(s);
+  }
 
-  assert(trie.contains("foo") == true);
-  assert(trie.contains("far") == true);
-  assert(trie.contains("bar") == true);
-  assert(trie.contains("car") == true);
+  // Must still be query-correct after promotions.
+  for (std::uint64_t i = 0UL; i < 64UL; i++)
+  {
+    std::string s = "a";
+    s += std::to_string(static_cast<unsigned long long>(i));
+    assert(trie.contains(s) == true);
+  }
 
-  assert(trie.contains("tar") == false);
-  assert(trie.contains("and") == false);
-  assert(trie.contains("man") == false);
-  assert(trie.contains("van") == false);
-}
-
-void test_trie_has_prefix(void)
-{
-  MockTrie trie;
-
-  trie.insert("foo");
-  trie.insert("far");
-  trie.insert("bar");
-  trie.insert("car");
-
-  assert(trie.has_prefix("fo")  == true);
-  assert(trie.has_prefix("b")   == true);
-  assert(trie.has_prefix("car") == true);
-  assert(trie.has_prefix("fa")  == true);
-
-  assert(trie.has_prefix("ko")  == false);
-  assert(trie.has_prefix("fl")  == false);
-  assert(trie.has_prefix("baz") == false);
-  assert(trie.has_prefix("ch")  == false);
+  assert(trie.has_prefix("a") == true);
+  assert(trie.has_prefix("b") == false);
 }
 
 int main(void)
 {
   test_trie_root();
-  test_trie_insert();
-  test_trie_clear();
-  test_trie_contains();
+  test_trie_insert_and_contains();
   test_trie_has_prefix();
+  test_trie_clear();
+  test_trie_bucket_stress_promote();
 
   return EXIT_SUCCESS;
 }

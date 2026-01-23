@@ -105,7 +105,7 @@ static std::vector<std::string> generate_keys(std::size_t count,
   return keys;
 }
 
-static void stress_insert(Trie& trie, const std::vector<std::string>& keys)
+static void stress_insert(HATTrie<>& trie, const std::vector<std::string>& keys)
 {
   measure_elapsed("insert bulk", [&]
   {
@@ -116,7 +116,7 @@ static void stress_insert(Trie& trie, const std::vector<std::string>& keys)
   });
 }
 
-static void stress_contains(Trie& trie,
+static void stress_contains(HATTrie<>& trie,
                             const std::vector<std::string>& keys,
                             std::size_t queries,
                             std::uint64_t seed = 0xBADC0DEULL)
@@ -145,7 +145,7 @@ static void stress_contains(Trie& trie,
   });
 }
 
-static void stress_prefix(Trie& trie,
+static void stress_prefix(HATTrie<>& trie,
                           const std::vector<std::string>& keys,
                           std::size_t queries,
                           std::uint64_t seed = 0x12345678ULL)
@@ -169,7 +169,7 @@ static void stress_prefix(Trie& trie,
   });
 }
 
-static void stress_reads_multithread(Trie& trie,
+static void stress_reads_multithread(HATTrie<>& trie,
                                      const std::vector<std::string>& keys,
                                      std::size_t total_queries,
                                      unsigned num_threads)
@@ -213,7 +213,7 @@ int main(void)
   std::cout << "Generating keys...\n";
   auto keys = generate_keys(num_keys, prefix_heavy);
 
-  Trie trie;
+  HATTrie<> trie;
 
   stress_insert(trie, keys);
 

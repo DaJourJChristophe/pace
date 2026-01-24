@@ -39,19 +39,28 @@ class Profiler final
   std::chrono::time_point<std::chrono::steady_clock> m_stop;
   Snapshot                                           m_previous_snapshot;
   Queue<Event, 64UL>                                 m_queue;
+  Queue<Frame, 64UL>                                 m_frame_buffer;
 
   void m_profile(const float timestamp, Snapshot snapshot) noexcept;
 
   StartsNStopsTuple m_find_mismatches(const Snapshot& snapshot) noexcept;
-
-  StartsNStopsTuple m_find_mismatches2(const Snapshot& snapshot) noexcept;
 
 public:
   explicit Profiler() noexcept;
 
   ~Profiler() noexcept = default;
 
-  void scan(std::future<void>& done, HANDLE th, const std::size_t skip = 0, const std::size_t max_frames = 64) noexcept;
+  void start(void) noexcept;
+
+  void stop(void) noexcept;
+
+  void finalize(void) noexcept;
+
+  bool scan(std::future<void>& done, HANDLE th, const std::size_t skip = 0, const std::size_t max_frames = 64) noexcept;
+
+  void profile(void) noexcept;
+
+  void profile_ERB(void) noexcept;
 
   void dump(void) noexcept;
 };

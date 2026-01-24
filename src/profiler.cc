@@ -24,118 +24,115 @@ Profiler::Frame::Frame(const float timestamp_, Snapshot snapshot_) noexcept
 
 Profiler::Profiler() noexcept : m_num_captured_samples(0UL), m_previous_snapshot(), m_queue() {}
 
-void Profiler::scan(std::future<void>& done, HANDLE th, const std::size_t skip, const std::size_t max_frames) noexcept
+void Profiler::start(void) noexcept
+{
+  m_start = std::chrono::steady_clock::now();
+}
+
+void Profiler::stop(void) noexcept
+{
+  m_stop = std::chrono::steady_clock::now();
+}
+
+void Profiler::finalize(void) noexcept
+{
+  const std::chrono::duration<float> elapsed_seconds = (m_stop - m_start);
+  m_profile(elapsed_seconds.count(), {});
+}
+
+bool Profiler::scan(std::future<void>& done, HANDLE th, const std::size_t skip, const std::size_t max_frames) noexcept
 {
   using namespace std::chrono_literals;
 
-  Queue<Frame, 64UL> frames_queue;
+  if (done.wait_for(0s) == std::future_status::ready)
+  {
+    return true;
+  }
 
-  m_start = std::chrono::steady_clock::now();
+  auto frames = stacktrace::capture(th, skip, max_frames);
+  const auto now = std::chrono::steady_clock::now();
+  const std::chrono::duration<float> elapsed_seconds = (now - m_start);
+  Snapshot snapshot;
+
+  for (const auto& frame : frames)
+  {
+    snapshot.push_back(stacktrace::stable_function_name_only(frame));
+  }
+
+  std::reverse(snapshot.begin(), snapshot.end());
+
+  if (m_frame_buffer.emplace(elapsed_seconds.count(), std::move(snapshot)))
+  {
+    common::fatal_trap();
+  }
+
+  return false;
+}
+
+void Profiler::profile(void) noexcept
+{
+  bool empty;
 
   for (;;)
   {
-    auto frames = stacktrace::capture(th, skip, max_frames);
-    const auto now = std::chrono::steady_clock::now();
-    const std::chrono::duration<float> elapsed_seconds = (now - m_start);
-    Snapshot snapshot;
-
-    if (done.wait_for(0s) == std::future_status::ready)
+    if (m_frame_buffer.empty(empty))
     {
-      bool empty;
+      common::fatal_trap();
+    }
 
-      for (;;)
-      {
-        if (frames_queue.empty(empty))
-        {
-          common::fatal_trap();
-        }
-
-        if (empty)
-        {
-          break;
-        }
-
-        Frame frame;
-
-        if (frames_queue.pop(frame))
-        {
-          common::fatal_trap();
-        }
-
-        m_profile(frame.timestamp, frame.snapshot);
-      }
-
+    if (empty)
+    {
       break;
     }
 
-    for (const auto& frame : frames)
-    {
-      snapshot.push_back(stacktrace::stable_function_name_only(frame));
+    Frame frame;
 
-      /*
-      const auto& f = frames[i];
-      std::cout << "#" << i << " 0x" << std::hex << f.pc << std::dec
-                << " " << f.function;
-
-      if (!f.file.empty())
-        std::cout << " (" << f.file << ":" << f.line << ")";
-
-      if (!f.module.empty())
-        std::cout << "  [" << f.module << "]";
-
-      if (f.offset)
-        std::cout << " +0x" << std::hex << f.offset << std::dec;
-      */
-    }
-
-    std::reverse(snapshot.begin(), snapshot.end());
-
-    if (frames_queue.emplace(elapsed_seconds.count(), std::move(snapshot)))
+    if (m_frame_buffer.pop(frame))
     {
       common::fatal_trap();
     }
 
-    std::size_t size;
+    m_profile(frame.timestamp, frame.snapshot);
+  }
+}
 
-    if (frames_queue.size(size))
-    {
-      common::fatal_trap();
-    }
+void Profiler::profile_ERB(void) noexcept
+{
+  std::size_t size;
 
-    if (size >= 32UL)
-    {
-      bool empty;
-
-      for (;;)
-      {
-        if (frames_queue.empty(empty))
-        {
-          common::fatal_trap();
-        }
-
-        if (empty)
-        {
-          break;
-        }
-
-        Frame frame;
-
-        if (frames_queue.pop(frame))
-        {
-          common::fatal_trap();
-        }
-
-        m_profile(frame.timestamp, frame.snapshot);
-      }
-    }
-
-    std::this_thread::sleep_for(25ms);
+  if (m_frame_buffer.size(size))
+  {
+    common::fatal_trap();
   }
 
-  m_stop  = std::chrono::steady_clock::now();
+  if (size < 32UL)
+  {
+    return;
+  }
 
-  const std::chrono::duration<float> elapsed_seconds = (m_stop - m_start);
-  m_profile(elapsed_seconds.count(), {});
+  bool empty;
+
+  for (;;)
+  {
+    Frame frame;
+
+    if (m_frame_buffer.pop(frame))
+    {
+      common::fatal_trap();
+    }
+
+    m_profile(frame.timestamp, frame.snapshot);
+
+    if (m_frame_buffer.empty(empty))
+    {
+      common::fatal_trap();
+    }
+
+    if (empty)
+    {
+      break;
+    }
+  }
 }
 
 void Profiler::m_profile(const float timestamp, Snapshot snapshot) noexcept
@@ -209,8 +206,6 @@ void Profiler::dump(void) noexcept
 
   Stack<Event, 128> stack;
 
-  // while (m_queue.empty() == false)
-
   for (;;)
   {
     Event old_event;
@@ -234,7 +229,8 @@ void Profiler::dump(void) noexcept
         assert((stack.pop(old_event) == Stack<Event, 32>::kOk));
         break;
 
-      default: break;
+      default:
+        common::fatal_trap();
     }
   }
 }
@@ -274,55 +270,6 @@ Profiler::StartsNStopsTuple Profiler::m_find_mismatches(const Snapshot& snapshot
   {
     starts.push_back(*c);
   }
-
-  return std::make_tuple(std::move(starts), std::move(stops));
-}
-
-Profiler::StartsNStopsTuple Profiler::m_find_mismatches2(const Snapshot& snapshot) noexcept
-{
-  // Choose a delimiter that is extremely unlikely to appear in symbol names.
-  // (Unit Separator 0x1F). Any consistent delimiter works.
-  static constexpr char kSep = '\x1F';
-
-  auto append_frame = [](std::string& dst, const std::string& s) {
-    dst.append(s);
-    dst.push_back(kSep);
-  };
-
-  // Build the serialized previous stack (frame0<sep>frame1<sep>...)
-  std::string prev_key;
-  prev_key.reserve(256);
-  for (const auto& f : m_previous_snapshot) append_frame(prev_key, f);
-
-  // Insert the full previous key; trie will answer prefix-existence queries.
-  HATTrie<> trie;
-  trie.insert(prev_key);
-
-  // Find LCP length in *frames* (not bytes).
-  std::size_t lcp = 0;
-  std::string prefix;
-  prefix.reserve(prev_key.size());
-
-  for (std::size_t i = 0; i < snapshot.size(); ++i)
-  {
-    append_frame(prefix, snapshot[i]);
-
-    if (!trie.has_prefix(prefix))
-      break;
-
-    lcp = i + 1;
-  }
-
-  std::vector<std::string> starts;
-  std::vector<std::string> stops;
-
-  // Anything beyond LCP in previous => stops
-  for (std::size_t i = lcp; i < m_previous_snapshot.size(); ++i)
-    stops.push_back(m_previous_snapshot[i]);
-
-  // Anything beyond LCP in current => starts
-  for (std::size_t i = lcp; i < snapshot.size(); ++i)
-    starts.push_back(snapshot[i]);
 
   return std::make_tuple(std::move(starts), std::move(stops));
 }

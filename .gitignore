@@ -8,5 +8,3 @@
 
 bin/*
 !bin/.keep
-
-tmp/

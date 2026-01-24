@@ -2,7 +2,7 @@
 
 g++ -Iinclude -Ilib/xxHash -std=c++20 -ggdb3 -O0 -march=native -Wall -Wextra -Werror^
   -fno-omit-frame-pointer -fno-optimize-sibling-calls -o bin/main src/main.cc^
-  src/event.cc src/map.cc src/profiler.cc src/trie.cc -ldbghelp -limagehlp
+  src/context.cc src/event.cc src/map.cc src/profiler.cc src/trie.cc -ldbghelp -limagehlp
 
 
 g++ -Iinclude -Ilib/xxHash -std=c++20 -ggdb3 -O0 -march=native -Wall -Wextra^

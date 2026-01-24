@@ -68,6 +68,7 @@ namespace stacktrace
       stl_prefix.insert("std::__");
       stl_prefix.insert("__gnu_cxx::");
       stl_prefix.insert("__cxxabiv1::");
+      stl_prefix.insert("pace::");
 
       // Common STL plumbing substrings
       stl_substr.insert("std::__invoke");

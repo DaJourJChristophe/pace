@@ -4,11 +4,7 @@
 #include <iostream>
 #include <string>
 
-enum class EventType : std::uint8_t
-{
-  START,
-  END,
-};
+enum class EventType : std::uint8_t { START, END };
 
 struct Event final
 {

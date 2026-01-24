@@ -1,45 +1,27 @@
+/*
+ * Responsibility - Orchestrator for organizing frames produced by the Scanner by producing Events.
+ */
 #pragma once
 
 #include "event.hpp"
+#include "frame.hpp"
+#include "icontext.hpp"
 #include "queue.hpp"
 #include "snapshot.hpp"
-#include "stack.hpp"
-#include "trace.hpp"
-#include "trie.hpp"
 
-#include <algorithm>
-#include <cassert>
 #include <chrono>
 #include <cstdint>
-#include <future>
-#include <iomanip>
-#include <iostream>
-#include <iterator>
-#include <string>
-#include <thread>
 #include <tuple>
-#include <vector>
 
 class Profiler final
 {
-  struct Frame final
-  {
-    float    timestamp;
-    Snapshot snapshot;
-
-    explicit Frame() noexcept = default;
-
-    explicit Frame(const float timestamp_, Snapshot snapshot_) noexcept;
-  };
-
   using StartsNStopsTuple = std::tuple<std::vector<std::string>, std::vector<std::string>>;
 
-  std::uint64_t                                      m_num_captured_samples;
-  std::chrono::time_point<std::chrono::steady_clock> m_start;
-  std::chrono::time_point<std::chrono::steady_clock> m_stop;
-  Snapshot                                           m_previous_snapshot;
-  Queue<Event, 64UL>                                 m_queue;
-  Queue<Frame, 64UL>                                 m_frame_buffer;
+  std::uint64_t       m_num_captured_samples;
+  Snapshot            m_previous_snapshot;
+  Queue<Event, 64UL>  m_queue;
+  Queue<Frame, 64UL>* m_frame_buffer{nullptr};
+  IContext*           m_context{nullptr};
 
   void m_profile(const float timestamp, Snapshot snapshot) noexcept;
 
@@ -50,17 +32,15 @@ public:
 
   ~Profiler() noexcept = default;
 
-  void start(void) noexcept;
-
-  void stop(void) noexcept;
-
   void finalize(void) noexcept;
-
-  bool scan(std::future<void>& done, HANDLE th, const std::size_t skip = 0, const std::size_t max_frames = 64) noexcept;
 
   void profile(void) noexcept;
 
   void profile_ERB(void) noexcept;
 
   void dump(void) noexcept;
+
+  void set_context(IContext* context) noexcept;
+
+  void set_frame_buffer(Queue<Frame, 64UL>* frame_buffer) noexcept;
 };

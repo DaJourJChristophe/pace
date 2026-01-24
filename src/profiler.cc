@@ -1,5 +1,6 @@
 #include "common.hpp"
 #include "event.hpp"
+#include "icontext.hpp"
 #include "profiler.hpp"
 #include "snapshot.hpp"
 #include "stack.hpp"
@@ -19,63 +20,22 @@
 #include <tuple>
 #include <vector>
 
-Profiler::Frame::Frame(const float timestamp_, Snapshot snapshot_) noexcept
-  : timestamp(timestamp_), snapshot(std::move(snapshot_)) {}
-
 Profiler::Profiler() noexcept : m_num_captured_samples(0UL), m_previous_snapshot(), m_queue() {}
-
-void Profiler::start(void) noexcept
-{
-  m_start = std::chrono::steady_clock::now();
-}
-
-void Profiler::stop(void) noexcept
-{
-  m_stop = std::chrono::steady_clock::now();
-}
 
 void Profiler::finalize(void) noexcept
 {
-  const std::chrono::duration<float> elapsed_seconds = (m_stop - m_start);
+  const std::chrono::duration<float> elapsed_seconds = (m_context->get_stop() - m_context->get_start());
   m_profile(elapsed_seconds.count(), {});
-}
-
-bool Profiler::scan(std::future<void>& done, HANDLE th, const std::size_t skip, const std::size_t max_frames) noexcept
-{
-  using namespace std::chrono_literals;
-
-  if (done.wait_for(0s) == std::future_status::ready)
-  {
-    return true;
-  }
-
-  auto frames = stacktrace::capture(th, skip, max_frames);
-  const auto now = std::chrono::steady_clock::now();
-  const std::chrono::duration<float> elapsed_seconds = (now - m_start);
-  Snapshot snapshot;
-
-  for (const auto& frame : frames)
-  {
-    snapshot.push_back(stacktrace::stable_function_name_only(frame));
-  }
-
-  std::reverse(snapshot.begin(), snapshot.end());
-
-  if (m_frame_buffer.emplace(elapsed_seconds.count(), std::move(snapshot)))
-  {
-    common::fatal_trap();
-  }
-
-  return false;
 }
 
 void Profiler::profile(void) noexcept
 {
+  auto frame_buffer = *m_frame_buffer;
   bool empty;
 
   for (;;)
   {
-    if (m_frame_buffer.empty(empty))
+    if (frame_buffer.empty(empty))
     {
       common::fatal_trap();
     }
@@ -87,7 +47,7 @@ void Profiler::profile(void) noexcept
 
     Frame frame;
 
-    if (m_frame_buffer.pop(frame))
+    if (frame_buffer.pop(frame))
     {
       common::fatal_trap();
     }
@@ -98,9 +58,10 @@ void Profiler::profile(void) noexcept
 
 void Profiler::profile_ERB(void) noexcept
 {
+  auto frame_buffer = *m_frame_buffer;
   std::size_t size;
 
-  if (m_frame_buffer.size(size))
+  if (frame_buffer.size(size))
   {
     common::fatal_trap();
   }
@@ -116,14 +77,14 @@ void Profiler::profile_ERB(void) noexcept
   {
     Frame frame;
 
-    if (m_frame_buffer.pop(frame))
+    if (frame_buffer.pop(frame))
     {
       common::fatal_trap();
     }
 
     m_profile(frame.timestamp, frame.snapshot);
 
-    if (m_frame_buffer.empty(empty))
+    if (frame_buffer.empty(empty))
     {
       common::fatal_trap();
     }
@@ -194,7 +155,7 @@ void Profiler::m_profile(const float timestamp, Snapshot snapshot) noexcept
 
 void Profiler::dump(void) noexcept
 {
-  const std::chrono::duration<double> elapsed_seconds = (m_stop - m_start);
+  const std::chrono::duration<double> elapsed_seconds = (m_context->get_stop() - m_context->get_start());
   const double samples_pre_second = (elapsed_seconds.count() / static_cast<double>(m_num_captured_samples));
 
   std::cout << std::fixed << std::setprecision(2);
@@ -272,4 +233,14 @@ Profiler::StartsNStopsTuple Profiler::m_find_mismatches(const Snapshot& snapshot
   }
 
   return std::make_tuple(std::move(starts), std::move(stops));
+}
+
+void Profiler::set_context(IContext* context) noexcept
+{
+  m_context = context;
+}
+
+void Profiler::set_frame_buffer(Queue<Frame, 64UL>* frame_buffer) noexcept
+{
+  m_frame_buffer = frame_buffer;
 }

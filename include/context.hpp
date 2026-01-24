@@ -1,12 +1,16 @@
+/*
+ * Responsibility - A container orchestrator for interacting with subsystem components.
+ */
 #pragma once
 
+#include "icontext.hpp"
 #include "profiler.hpp"
+#include "scan.hpp"
 
+#include <chrono>
 #include <cstdlib>
-#include <future>
 #include <iostream>
 #include <memory>
-#include <thread>
 
 #if defined(_WIN32) || defined(__CYGWIN__)
   #include <windows.h>
@@ -14,7 +18,7 @@
 
 namespace pace
 {
-  class Context final
+  class Context final : public IContext
   {
     enum class StateType { SCAN, PROFILE, THROTTLE, EXIT };
 
@@ -67,14 +71,12 @@ namespace pace
       static inline std::shared_ptr<IState> create(Context* ctx);
     };
 
-    Profiler                m_profiler;
-    StateType               m_state_type{StateType::SCAN};
-    std::shared_ptr<IState> m_state{nullptr};
-    std::promise<HANDLE>    th_promise;
-    std::future<HANDLE>     th_future = th_promise.get_future();
-    HANDLE                  th;
-    std::future<void>       done;
-    std::thread             worker;
+    Profiler                                           m_profiler;
+    Scanner                                            m_scanner;
+    StateType                                          m_state_type{StateType::SCAN};
+    std::shared_ptr<IState>                            m_state{nullptr};
+    std::chrono::time_point<std::chrono::steady_clock> m_start;
+    std::chrono::time_point<std::chrono::steady_clock> m_stop;
 
     bool m_next(void) noexcept;
 
@@ -86,51 +88,18 @@ namespace pace
 
   public:
     template <class T>
-    inline Context(T&& target) noexcept : m_state(StateScan::create(this))
+    inline Context(T&& target) noexcept : m_profiler(),
+                                          m_scanner(target),
+                                          m_state(StateScan::create(this))
     {
-      std::packaged_task<void()> task([this, t = std::forward<T>(target)]() mutable
-      {
-      // ----- setup -----
+      m_scanner.set_context(this);
 
-      #if defined(_WIN32) || defined(__CYGWIN__)
-        HANDLE dup = nullptr;
+      auto frame_buffer = m_scanner.get_frame_buffer();
 
-        BOOL ok = ::DuplicateHandle(
-            ::GetCurrentProcess(),
-            ::GetCurrentThread(),
-            ::GetCurrentProcess(),
-            &dup,
-            THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION,
-            FALSE,
-            0);
+      m_profiler.set_context(this);
+      m_profiler.set_frame_buffer(frame_buffer);
 
-        if (!ok)
-        {
-          dup = nullptr;
-        }
-
-        th_promise.set_value(dup);
-      #else
-        th_promise.set_value(nullptr);
-      #endif
-
-        t();
-      });
-
-      done   = task.get_future();
-      worker = std::thread(std::move(task));
-
-      th = th_future.get();
-      if (!th)
-      {
-        std::cerr << "[main] failed to acquire worker thread handle\n";
-        worker.join();
-        exit(EXIT_FAILURE);
-      }
-
-      m_profiler.start();
-
-      // ----- event-loop -----
+      start();
 
       for (;;)
       {
@@ -140,17 +109,26 @@ namespace pace
         }
       }
 
-      m_profiler.stop();
+      stop();
+
       m_profiler.finalize();
     }
 
     ~Context() noexcept;
+
+    void start(void) noexcept;
+
+    void stop(void) noexcept;
 
     void profile(void) noexcept;
 
     void profile_ERB(void) noexcept;
 
     bool scan(void) noexcept;
+
+    std::chrono::time_point<std::chrono::steady_clock> get_start(void) const noexcept override;
+
+    std::chrono::time_point<std::chrono::steady_clock> get_stop(void) const noexcept override;
   };
 
   inline std::shared_ptr<Context::IState> Context::StateScan::create(Context* ctx)

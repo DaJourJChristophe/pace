@@ -1,6 +1,7 @@
 #include "common.hpp"
 #include "context.hpp"
 
+#include <chrono>
 #include <cstdlib>
 #include <memory>
 
@@ -109,13 +110,17 @@ namespace pace
 
   Context::~Context() noexcept
   {
-    worker.join();
-
-  #if defined(_WIN32) || defined(__CYGWIN__)
-    ::CloseHandle(th);
-  #endif
-
     m_profiler.dump();
+  }
+
+  void Context::start(void) noexcept
+  {
+    m_start = std::chrono::steady_clock::now();
+  }
+
+  void Context::stop(void) noexcept
+  {
+    m_stop = std::chrono::steady_clock::now();
   }
 
   void Context::profile(void) noexcept
@@ -130,6 +135,16 @@ namespace pace
 
   bool Context::scan(void) noexcept
   {
-    return m_profiler.scan(done, th, /*skip=*/0UL, /*max_frames=*/64UL);
+    return m_scanner.scan(/*skip=*/0UL, /*max_frames=*/64UL);
+  }
+
+  std::chrono::time_point<std::chrono::steady_clock> Context::get_start(void) const noexcept
+  {
+    return m_start;
+  }
+
+  std::chrono::time_point<std::chrono::steady_clock> Context::get_stop(void) const noexcept
+  {
+    return m_stop;
   }
 } // namespace pace

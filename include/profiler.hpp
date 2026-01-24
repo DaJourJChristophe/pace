@@ -22,7 +22,7 @@
 
 class Profiler final
 {
-  struct Frame
+  struct Frame final
   {
     float    timestamp;
     Snapshot snapshot;

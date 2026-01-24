@@ -3,6 +3,7 @@
  */
 #pragma once
 
+#include "clock.hpp"
 #include "icontext.hpp"
 #include "profiler.hpp"
 #include "scan.hpp"
@@ -71,12 +72,10 @@ namespace pace
       static inline std::shared_ptr<IState> create(Context* ctx);
     };
 
-    Profiler                                           m_profiler;
-    Scanner                                            m_scanner;
-    StateType                                          m_state_type{StateType::SCAN};
-    std::shared_ptr<IState>                            m_state{nullptr};
-    std::chrono::time_point<std::chrono::steady_clock> m_start;
-    std::chrono::time_point<std::chrono::steady_clock> m_stop;
+    Profiler                m_profiler;
+    Scanner                 m_scanner;
+    StateType               m_state_type{StateType::SCAN};
+    std::shared_ptr<IState> m_state{nullptr};
 
     bool m_next(void) noexcept;
 
@@ -99,7 +98,8 @@ namespace pace
       m_profiler.set_context(this);
       m_profiler.set_frame_buffer(frame_buffer);
 
-      start();
+      Clock& clock = Clock::get_instance();
+      clock.start();
 
       for (;;)
       {
@@ -109,26 +109,18 @@ namespace pace
         }
       }
 
-      stop();
+      clock.stop();
 
       m_profiler.finalize();
     }
 
     ~Context() noexcept;
 
-    void start(void) noexcept;
-
-    void stop(void) noexcept;
-
     void profile(void) noexcept;
 
     void profile_ERB(void) noexcept;
 
     bool scan(void) noexcept;
-
-    std::chrono::time_point<std::chrono::steady_clock> get_start(void) const noexcept override;
-
-    std::chrono::time_point<std::chrono::steady_clock> get_stop(void) const noexcept override;
   };
 
   inline std::shared_ptr<Context::IState> Context::StateScan::create(Context* ctx)

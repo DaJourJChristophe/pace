@@ -1,3 +1,4 @@
+#include "clock.hpp"
 #include "common.hpp"
 #include "event.hpp"
 #include "icontext.hpp"
@@ -24,7 +25,8 @@ Profiler::Profiler() noexcept : m_num_captured_samples(0UL), m_previous_snapshot
 
 void Profiler::finalize(void) noexcept
 {
-  const std::chrono::duration<float> elapsed_seconds = (m_context->get_stop() - m_context->get_start());
+  Clock& clock = Clock::get_instance();
+  const std::chrono::duration<float> elapsed_seconds = (clock.get_stop() - clock.get_start());
   m_profile(elapsed_seconds.count(), {});
 }
 
@@ -155,7 +157,8 @@ void Profiler::m_profile(const float timestamp, Snapshot snapshot) noexcept
 
 void Profiler::dump(void) noexcept
 {
-  const std::chrono::duration<double> elapsed_seconds = (m_context->get_stop() - m_context->get_start());
+  Clock& clock = Clock::get_instance();
+  const std::chrono::duration<double> elapsed_seconds = (clock.get_stop() - clock.get_start());
   const double samples_pre_second = (elapsed_seconds.count() / static_cast<double>(m_num_captured_samples));
 
   std::cout << std::fixed << std::setprecision(2);

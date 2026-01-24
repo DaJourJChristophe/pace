@@ -1,3 +1,4 @@
+#include "clock.hpp"
 #include "common.hpp"
 #include "queue.hpp"
 #include "scan.hpp"
@@ -33,8 +34,9 @@ bool Scanner::scan(const std::size_t skip, const std::size_t max_frames) noexcep
   }
 
   auto frames = stacktrace::capture(m_th, skip, max_frames);
+  Clock& clock = Clock::get_instance();
   const auto now = std::chrono::steady_clock::now();
-  const std::chrono::duration<float> elapsed_seconds = (now - m_context->get_start());
+  const std::chrono::duration<float> elapsed_seconds = (now - clock.get_start());
   Snapshot snapshot;
 
   for (const auto& frame : frames)

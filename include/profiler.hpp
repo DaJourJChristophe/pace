@@ -9,7 +9,6 @@
 #include "queue.hpp"
 #include "snapshot.hpp"
 
-#include <chrono>
 #include <cstdint>
 #include <tuple>
 

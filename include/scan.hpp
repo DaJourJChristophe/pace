@@ -7,6 +7,7 @@
 #include "icontext.hpp"
 #include "queue.hpp"
 #include "snapshot.hpp"
+#include "trace.hpp"
 
 #include <future>
 #include <iostream>
@@ -18,13 +19,14 @@
 
 class Scanner final
 {
-  HANDLE               m_th;
-  std::future<void>    m_done;
-  std::thread          m_worker;
-  std::promise<HANDLE> m_th_promise;
-  std::future<HANDLE>  m_th_future = m_th_promise.get_future();
-  Queue<Frame, 64UL>   m_frame_buffer;
-  IContext*            m_context{nullptr};
+  HANDLE                  m_th;
+  std::future<void>       m_done;
+  std::thread             m_worker;
+  std::promise<HANDLE>    m_th_promise;
+  std::future<HANDLE>     m_th_future = m_th_promise.get_future();
+  Queue<Frame, 64UL>      m_frame_buffer;
+  IContext*               m_context{nullptr};
+  std::shared_ptr<pace::ITrace> m_trace{nullptr};
 
 public:
   template <class T>
@@ -43,6 +45,10 @@ public:
 template <class T>
 Scanner::Scanner(T&& target) noexcept
 {
+  pace::WindowsTraceFactory factory;
+
+  m_trace = factory.create_trace();
+
   std::packaged_task<void()> task([this, t = std::forward<T>(target)]() mutable
   {
   // ----- setup -----

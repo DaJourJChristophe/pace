@@ -2,7 +2,6 @@
 #include "common.hpp"
 #include "queue.hpp"
 #include "scan.hpp"
-#include "trace.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -33,7 +32,7 @@ bool Scanner::scan(const std::size_t skip, const std::size_t max_frames) noexcep
     return true;
   }
 
-  auto frames = stacktrace::capture(m_th, skip, max_frames);
+  auto frames = m_trace->capture(m_th, skip, max_frames);
   Clock& clock = Clock::get_instance();
   const auto now = std::chrono::steady_clock::now();
   const std::chrono::duration<float> elapsed_seconds = (now - clock.get_start());
@@ -41,7 +40,7 @@ bool Scanner::scan(const std::size_t skip, const std::size_t max_frames) noexcep
 
   for (const auto& frame : frames)
   {
-    snapshot.push_back(stacktrace::stable_function_name_only(frame));
+    snapshot.push_back(frame.function);
   }
 
   std::reverse(snapshot.begin(), snapshot.end());

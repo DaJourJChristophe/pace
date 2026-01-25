@@ -175,6 +175,18 @@ void Profiler::dump(void) noexcept
     Event old_event;
     Event new_event;
 
+    bool empty;
+
+    if (m_queue.empty(empty))
+    {
+      common::fatal_trap();
+    }
+
+    if (empty)
+    {
+      break;
+    }
+
     if (m_queue.pop(new_event))
     {
       common::fatal_trap();
